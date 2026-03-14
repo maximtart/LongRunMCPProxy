@@ -7,16 +7,7 @@ import json
 import pytest
 
 from longrun_mcp_proxy.job_store import JobStore
-from longrun_mcp_proxy.middleware import AsyncWrapperMiddleware
 from longrun_mcp_proxy.proxy_stdio import build_proxy
-
-
-def _get_store(proxy) -> JobStore:
-    """Get JobStore from the AsyncWrapperMiddleware on the proxy."""
-    for mw in proxy.middleware:
-        if isinstance(mw, AsyncWrapperMiddleware):
-            return mw._store
-    raise AssertionError("AsyncWrapperMiddleware not found")
 
 
 class TestProxyTools:
@@ -31,7 +22,7 @@ class TestProxyTools:
     @pytest.mark.asyncio
     async def test_check_and_cancel_job(self):
         proxy = build_proxy(["echo", "dummy"], {"nonexistent_tool"})
-        store = _get_store(proxy)
+        store = proxy._store
 
         job = store.create("build_sim")
 

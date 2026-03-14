@@ -96,13 +96,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def _run_stdio(args: argparse.Namespace) -> None:
     """Run stdio proxy."""
-    from longrun_mcp_proxy.proxy_stdio import build_proxy
+    from longrun_mcp_proxy.proxy_stdio import build_proxy, connect_and_register
 
     async_tools = {t.strip() for t in args.async_tools.split(",") if t.strip()}
 
     proxy = build_proxy(args.command, async_tools)
 
-    asyncio.run(proxy.run_async(transport="stdio"))
+    async def _main():
+        await connect_and_register(proxy)
+        await proxy.run_async(transport="stdio")
+
+    asyncio.run(_main())
 
 
 def _run_persistent(args: argparse.Namespace) -> None:

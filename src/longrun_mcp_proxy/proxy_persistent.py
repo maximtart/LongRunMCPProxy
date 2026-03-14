@@ -236,10 +236,19 @@ def _register_async_tool(proxy, downstream, store, name, description, input_sche
     _register_dynamic_tool(proxy, name, f"[ASYNC] {description}", input_schema, _async_handler)
 
 
+import keyword as _keyword
+
+
 def _register_dynamic_tool(proxy, name, description, input_schema, handler):
     """Register a tool with dynamic signature matching the input schema."""
     params = input_schema.get("properties", {})
     required = set(input_schema.get("required", []))
+
+    # Map param names to safe Python identifiers (e.g. "global" → "global_")
+    safe_names: dict[str, str] = {}
+    for pname in params:
+        safe = f"{pname}_" if _keyword.iskeyword(pname) else pname
+        safe_names[pname] = safe
 
     param_annotations = {}
     for pname, pdef in params.items():
@@ -251,19 +260,27 @@ def _register_dynamic_tool(proxy, name, description, input_schema, handler):
         py_type = type_map.get(ptype, str)
         if pname not in required:
             py_type = typing.Optional[py_type]
-        param_annotations[pname] = py_type
+        param_annotations[safe_names[pname]] = py_type
 
     # Required params first, then optional (Python syntax requirement)
     param_strs = []
     for pname in params:
+        safe = safe_names[pname]
         if pname in required:
-            param_strs.append(f"{pname}: __annotations__['{pname}']")
+            param_strs.append(f"{safe}: __annotations__['{safe}']")
     for pname in params:
+        safe = safe_names[pname]
         if pname not in required:
-            param_strs.append(f"{pname}: __annotations__['{pname}'] = None")
+            param_strs.append(f"{safe}: __annotations__['{safe}'] = None")
+
+    # Build reverse mapping for renamed params
+    renames = {safe: orig for orig, safe in safe_names.items() if orig != safe}
 
     func_code = f"async def {name}({', '.join(param_strs)}) -> str:\n"
     func_code += "    kwargs = {k: v for k, v in locals().items() if v is not None}\n"
+    if renames:
+        for safe, orig in renames.items():
+            func_code += f"    if '{safe}' in kwargs: kwargs['{orig}'] = kwargs.pop('{safe}')\n"
     func_code += "    return await _handler_ref(**kwargs)\n"
 
     local_ns = {"__annotations__": param_annotations, "_handler_ref": handler}
