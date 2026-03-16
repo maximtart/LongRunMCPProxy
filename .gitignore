@@ -4,3 +4,10 @@ __pycache__/
 dist/
 build/
 .pytest_cache/
+.env
+.env.*
+*.key
+*.pem
+.DS_Store
+.vscode/
+.idea/
