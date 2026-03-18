@@ -174,10 +174,16 @@ def build_persistent_proxy(
         if job.status == "failed":
             error = filter_large_output(job.error) if job.error else "unknown error"
             return json.dumps({"status": "failed", "error": error})
+        result_text = None
         if job.result:
-            text = _extract_result_text(job.result)
-            return filter_large_output(text)
-        return json.dumps({"status": "completed", "result": None})
+            result_text = filter_large_output(_extract_result_text(job.result))
+        elapsed = round(time.time() - job.created_at, 1) if job.completed_at else None
+        return json.dumps({
+            "status": "completed",
+            "tool": job.tool_name,
+            "elapsed_sec": elapsed,
+            "result": result_text,
+        })
 
     @proxy.tool(name="cancel_job")
     def cancel_job(job_id: str) -> str:

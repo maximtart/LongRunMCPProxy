@@ -233,9 +233,16 @@ def _register_job_tools(proxy, store: JobStore) -> None:
         if job.status == "failed":
             error = filter_large_output(job.error) if job.error else "unknown error"
             return json.dumps({"status": "failed", "error": error})
+        result_text = None
         if hasattr(job, "result_text") and job.result_text:
-            return filter_large_output(job.result_text)
-        return json.dumps({"status": "completed", "result": None})
+            result_text = filter_large_output(job.result_text)
+        elapsed = round(time.time() - job.created_at, 1) if job.completed_at else None
+        return json.dumps({
+            "status": "completed",
+            "tool": job.tool_name,
+            "elapsed_sec": elapsed,
+            "result": result_text,
+        })
 
     @proxy.tool(name="cancel_job")
     def cancel_job(job_id: str) -> str:
