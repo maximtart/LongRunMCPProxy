@@ -86,6 +86,16 @@ async def connect_and_register(proxy) -> None:
 
     logger.info("Connected to downstream (%d tools)", len(tools))
 
+    # Auto-detect async tools if none were explicitly specified
+    if not proxy._async_tools:
+        from longrun_mcp_proxy.extras.xcode_defaults import KNOWN_ASYNC_TOOLS
+
+        discovered = {t.name for t in tools}
+        auto = discovered & KNOWN_ASYNC_TOOLS
+        if auto:
+            proxy._async_tools = auto
+            logger.info("Auto-detected async tools: %s", ", ".join(sorted(auto)))
+
     for tool_def in tools:
         tool_name = tool_def.name
         tool_desc = tool_def.description or ""
