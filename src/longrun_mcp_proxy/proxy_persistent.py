@@ -149,6 +149,22 @@ def build_persistent_proxy(
             async_tools = auto
             logger.info("Auto-detected async tools: %s", ", ".join(sorted(auto)))
 
+    # Auto-detect retry tools
+    from longrun_mcp_proxy.extras.xcode_defaults import KNOWN_RETRY_TOOLS
+
+    discovered = {t.name for t in tools}
+    retry_tools = {
+        name: delay
+        for name, delay in KNOWN_RETRY_TOOLS.items()
+        if name in discovered
+    }
+    if retry_tools:
+        logger.info(
+            "Auto-detected retry tools: %s",
+            ", ".join(f"{n} ({d}s)" for n, d in sorted(retry_tools.items())),
+        )
+    proxy._retry_tools = retry_tools
+
     for tool_def in tools:
         tool_name = tool_def.name
         tool_desc = tool_def.description or ""
@@ -235,6 +251,18 @@ def _register_async_tool(proxy, downstream, store, name, description, input_sche
         async def _run():
             try:
                 result = await downstream.call_tool(name, kwargs)
+                # Retry tool if it's in the retry list (e.g. RenderPreview)
+                retry_delay = getattr(proxy, "_retry_tools", {}).get(name)
+                if retry_delay:
+                    result_text = _extract_result_text(result)
+                    if "error" not in result_text.lower():
+                        logger.info(
+                            "Retry tool %s after %.1fs delay (cache warmup)",
+                            name,
+                            retry_delay,
+                        )
+                        await asyncio.sleep(retry_delay)
+                        result = await downstream.call_tool(name, kwargs)
                 job.result = result
                 job.status = "completed"
             except Exception as exc:
