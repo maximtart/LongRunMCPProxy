@@ -23,6 +23,7 @@ import typing
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StdioTransport
+from mcp import types as mcp_types
 from mcp.types import TextContent
 
 from longrun_mcp_proxy.job_store import JobStore
@@ -129,11 +130,23 @@ async def connect_and_register(proxy) -> None:
 async def _call_downstream(proxy, name: str, arguments: dict) -> str:
     """Call downstream tool and return full text result.
 
-    Uses session.call_tool() to bypass FastMCP's ToolError truncation
-    and capture all content items from the response.
+    Uses send_request() directly to bypass both FastMCP's ToolError truncation
+    AND MCP SDK's client-side outputSchema validation. The proxy is a transport
+    layer — downstream servers (e.g. Xcode MCP) may return structuredContent
+    that violates their own outputSchema (missing required fields like 'line').
+    Blocking that here would lose valid build results.
     """
-    client = proxy._downstream_client
-    raw = await client.session.call_tool(name, arguments)
+    session = proxy._downstream_client.session
+    raw = await session.send_request(
+        mcp_types.ClientRequest(
+            mcp_types.CallToolRequest(
+                params=mcp_types.CallToolRequestParams(
+                    name=name, arguments=arguments
+                ),
+            )
+        ),
+        mcp_types.CallToolResult,
+    )
 
     texts = []
     for c in (raw.content or []):

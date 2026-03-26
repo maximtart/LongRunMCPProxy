@@ -24,6 +24,7 @@ import typing
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StdioTransport
+from mcp import types as mcp_types
 
 from longrun_mcp_proxy.job_store import JobStore
 from longrun_mcp_proxy.output_filter import filter_large_output
@@ -62,13 +63,32 @@ class PersistentDownstream:
             )
             return self._tools
 
+    async def _send_tool_request(self, name: str, arguments: dict):
+        """Send tool call via send_request, bypassing outputSchema validation.
+
+        The proxy is a transport — downstream servers (e.g. Xcode MCP) may
+        return structuredContent that violates their own outputSchema.
+        Blocking that here would lose valid results.
+        """
+        session = self._client.session
+        return await session.send_request(
+            mcp_types.ClientRequest(
+                mcp_types.CallToolRequest(
+                    params=mcp_types.CallToolRequestParams(
+                        name=name, arguments=arguments
+                    ),
+                )
+            ),
+            mcp_types.CallToolResult,
+        )
+
     async def call_tool(
         self, name: str, arguments: dict, timeout: float = 300
     ) -> object:
         """Forward a tool call to downstream, reconnecting if needed."""
         try:
             return await asyncio.wait_for(
-                self._client.call_tool(name, arguments),
+                self._send_tool_request(name, arguments),
                 timeout=timeout,
             )
         except (asyncio.TimeoutError, Exception) as e:
@@ -79,7 +99,7 @@ class PersistentDownstream:
             )
             await self._reconnect()
             return await asyncio.wait_for(
-                self._client.call_tool(name, arguments),
+                self._send_tool_request(name, arguments),
                 timeout=timeout,
             )
 
