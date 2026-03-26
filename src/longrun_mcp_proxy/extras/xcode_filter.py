@@ -72,71 +72,83 @@ def _collapse_copy_failures(entries: list[dict]) -> tuple[list[dict], bool]:
     return kept, True
 
 
-def _group_warnings_across_entries(entries: list[dict]) -> tuple[list[dict], bool]:
-    """Group warnings by message across all entries into a summary.
+def _group_repeated_issues(entries: list[dict]) -> tuple[list[dict], bool]:
+    """Group repeated issues by message across all entries.
 
-    Warnings (especially deprecation) repeat across many files with the
-    same message. Instead of 68 entries saying "'X' is deprecated", produce
-    one grouped issue with count and locations list.
+    Issues (warnings, linker errors, etc.) often repeat across many entries
+    with the same message but different paths. Instead of 25 entries each
+    saying "Linker command failed", produce a summary with count + locations.
 
-    Only groups warning-severity issues; errors are left in their entries.
+    Issues that appear only in a single entry are left in place.
     Returns (new_entries, changed).
     """
-    # Separate warning-only entries from entries that have errors
-    warning_issues: list[tuple[dict, dict]] = []  # (issue, entry) pairs
+    from collections import defaultdict
+
+    # Count how many entries each message appears in
+    msg_entry_count: dict[str, int] = defaultdict(int)
+    for entry in entries:
+        seen_in_entry: set[str] = set()
+        for issue in entry.get("emittedIssues", []):
+            msg = issue.get("message", "")
+            if msg not in seen_in_entry:
+                msg_entry_count[msg] += 1
+                seen_in_entry.add(msg)
+
+    # Messages that appear in 2+ entries are "repeated"
+    repeated_msgs = {msg for msg, cnt in msg_entry_count.items() if cnt >= 2}
+    if not repeated_msgs:
+        return entries, False
+
+    # Separate: keep unique issues in their entries, collect repeated ones
     kept_entries = []
-    has_warnings = False
+    repeated_issues: list[tuple[dict, dict]] = []  # (issue, entry)
 
     for entry in entries:
         issues = entry.get("emittedIssues", [])
-        entry_errors = [i for i in issues if i.get("severity") != "warning"]
-        entry_warnings = [i for i in issues if i.get("severity") == "warning"]
+        unique = [i for i in issues if i.get("message", "") not in repeated_msgs]
+        repeated = [i for i in issues if i.get("message", "") in repeated_msgs]
 
-        if entry_warnings:
-            has_warnings = True
-            for w in entry_warnings:
-                warning_issues.append((w, entry))
+        for r in repeated:
+            repeated_issues.append((r, entry))
 
-        if entry_errors:
-            # Keep entry but only with its errors
-            kept_entries.append({
-                **entry,
-                "emittedIssues": entry_errors,
-            })
+        if unique:
+            kept_entries.append({**entry, "emittedIssues": unique})
 
-    if not has_warnings or len(warning_issues) <= 1:
-        return entries, False
-
-    # Group warnings by message text
-    from collections import defaultdict
-    groups: dict[str, list[dict]] = defaultdict(list)
-    for issue, entry in warning_issues:
+    # Group repeated issues by message + severity
+    groups: dict[str, dict] = {}  # key → {severity, locations}
+    for issue, entry in repeated_issues:
         msg = issue.get("message", "")
+        severity = issue.get("severity", "")
+        key = f"{msg}||{severity}"
+
+        if key not in groups:
+            groups[key] = {"message": msg, "severity": severity, "locations": []}
+
         location: dict = {}
         if issue.get("path"):
             location["path"] = issue["path"]
         if issue.get("line"):
             location["line"] = issue["line"]
-        groups[msg].append(location)
+        if location:
+            groups[key]["locations"].append(location)
 
-    # Build grouped warning issues
+    # Build grouped issues sorted by count desc
     grouped_issues = []
-    for msg, locations in sorted(groups.items(), key=lambda x: -len(x[1])):
-        grouped: dict = {
-            "message": msg,
-            "severity": "warning",
+    for group in sorted(groups.values(), key=lambda g: -len(g["locations"])):
+        item: dict = {
+            "message": group["message"],
+            "severity": group["severity"],
         }
-        if len(locations) > 1:
-            grouped["count"] = len(locations)
-        # Include up to 3 example locations (full list wastes tokens)
-        locs_with_path = [loc for loc in locations if loc.get("path")]
-        if locs_with_path:
-            grouped["locations"] = locs_with_path[:3]
-        grouped_issues.append(grouped)
+        count = max(len(group["locations"]), msg_entry_count.get(group["message"], 1))
+        if count > 1:
+            item["count"] = count
+        locs = group["locations"]
+        if locs:
+            item["locations"] = locs[:3]
+        grouped_issues.append(item)
 
-    # Add a single summary entry for all warnings
     kept_entries.append({
-        "buildTask": "Warnings summary (grouped by message)",
+        "buildTask": "Repeated issues (grouped by message)",
         "emittedIssues": grouped_issues,
     })
 
@@ -169,8 +181,8 @@ def dedup_build_log(text: str) -> str:
         data["buildLogEntries"] = entries
         changed = True
 
-    # Step 2: group warnings across entries by message
-    entries, grouped = _group_warnings_across_entries(entries)
+    # Step 2: group repeated issues across entries by message
+    entries, grouped = _group_repeated_issues(entries)
     if grouped:
         data["buildLogEntries"] = entries
         changed = True
