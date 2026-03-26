@@ -112,6 +112,13 @@ async def connect_and_register(proxy) -> None:
             ", ".join(f"{n} ({d}s)" for n, d in sorted(proxy._retry_tools.items())),
         )
 
+    # Auto-detect filter tools (Xcode build log dedup)
+    from longrun_mcp_proxy.extras.xcode_filter import KNOWN_FILTER_TOOLS
+
+    proxy._filter_tools = discovered & KNOWN_FILTER_TOOLS
+    if proxy._filter_tools:
+        logger.info("Auto-detected filter tools: %s", ", ".join(sorted(proxy._filter_tools)))
+
     for tool_def in tools:
         tool_name = tool_def.name
         tool_desc = tool_def.description or ""
@@ -163,7 +170,11 @@ async def _call_downstream(proxy, name: str, arguments: dict) -> str:
 def _register_passthrough_tool(proxy, name, description, input_schema):
     async def _handler(**kwargs):
         try:
-            return await _call_downstream(proxy, name, kwargs)
+            result = await _call_downstream(proxy, name, kwargs)
+            if name in getattr(proxy, "_filter_tools", set()):
+                from longrun_mcp_proxy.extras.xcode_filter import dedup_build_log
+                result = dedup_build_log(result)
+            return result
         except Exception as e:
             return json.dumps({"error": str(e)})
 
