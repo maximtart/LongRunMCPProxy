@@ -72,6 +72,77 @@ def _collapse_copy_failures(entries: list[dict]) -> tuple[list[dict], bool]:
     return kept, True
 
 
+def _group_warnings_across_entries(entries: list[dict]) -> tuple[list[dict], bool]:
+    """Group warnings by message across all entries into a summary.
+
+    Warnings (especially deprecation) repeat across many files with the
+    same message. Instead of 68 entries saying "'X' is deprecated", produce
+    one grouped issue with count and locations list.
+
+    Only groups warning-severity issues; errors are left in their entries.
+    Returns (new_entries, changed).
+    """
+    # Separate warning-only entries from entries that have errors
+    warning_issues: list[tuple[dict, dict]] = []  # (issue, entry) pairs
+    kept_entries = []
+    has_warnings = False
+
+    for entry in entries:
+        issues = entry.get("emittedIssues", [])
+        entry_errors = [i for i in issues if i.get("severity") != "warning"]
+        entry_warnings = [i for i in issues if i.get("severity") == "warning"]
+
+        if entry_warnings:
+            has_warnings = True
+            for w in entry_warnings:
+                warning_issues.append((w, entry))
+
+        if entry_errors:
+            # Keep entry but only with its errors
+            kept_entries.append({
+                **entry,
+                "emittedIssues": entry_errors,
+            })
+
+    if not has_warnings or len(warning_issues) <= 1:
+        return entries, False
+
+    # Group warnings by message text
+    from collections import defaultdict
+    groups: dict[str, list[dict]] = defaultdict(list)
+    for issue, entry in warning_issues:
+        msg = issue.get("message", "")
+        location: dict = {}
+        if issue.get("path"):
+            location["path"] = issue["path"]
+        if issue.get("line"):
+            location["line"] = issue["line"]
+        groups[msg].append(location)
+
+    # Build grouped warning issues
+    grouped_issues = []
+    for msg, locations in sorted(groups.items(), key=lambda x: -len(x[1])):
+        grouped: dict = {
+            "message": msg,
+            "severity": "warning",
+        }
+        if len(locations) > 1:
+            grouped["count"] = len(locations)
+        # Include up to 3 example locations (full list wastes tokens)
+        locs_with_path = [loc for loc in locations if loc.get("path")]
+        if locs_with_path:
+            grouped["locations"] = locs_with_path[:3]
+        grouped_issues.append(grouped)
+
+    # Add a single summary entry for all warnings
+    kept_entries.append({
+        "buildTask": "Warnings summary (grouped by message)",
+        "emittedIssues": grouped_issues,
+    })
+
+    return kept_entries, True
+
+
 def dedup_build_log(text: str) -> str:
     """Deduplicate and clean up a GetBuildLog JSON response.
 
@@ -98,7 +169,13 @@ def dedup_build_log(text: str) -> str:
         data["buildLogEntries"] = entries
         changed = True
 
-    # Step 2: dedup issues within each entry
+    # Step 2: group warnings across entries by message
+    entries, grouped = _group_warnings_across_entries(entries)
+    if grouped:
+        data["buildLogEntries"] = entries
+        changed = True
+
+    # Step 3: dedup issues within each entry
     for entry in entries:
         issues = entry.get("emittedIssues")
         if not isinstance(issues, list) or len(issues) <= 1:
