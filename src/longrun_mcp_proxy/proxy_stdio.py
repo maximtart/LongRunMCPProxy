@@ -133,6 +133,34 @@ async def connect_and_register(proxy) -> None:
                 proxy, tool_name, tool_desc, input_schema
             )
 
+    # Register extra tools (e.g. Xcode scheme management via JXA)
+    # when downstream looks like native Xcode MCP.
+    _register_extras(proxy, discovered)
+
+
+def _register_extras(proxy, discovered_tool_names: set[str]) -> None:
+    """Register extra tools based on what downstream exposes."""
+    from longrun_mcp_proxy.extras.xcode_defaults import XCODE_NATIVE_ASYNC_TOOLS
+
+    # Only add scheme tools when downstream is native Xcode MCP
+    if not (discovered_tool_names & XCODE_NATIVE_ASYNC_TOOLS):
+        return
+
+    from longrun_mcp_proxy.extras.xcode_schemes import EXTRA_TOOLS
+
+    for tool in EXTRA_TOOLS:
+        if tool["name"] in discovered_tool_names:
+            logger.debug("Skipping extra tool %s — already in downstream", tool["name"])
+            continue
+        handler = tool["handler"]
+        _register_dynamic_tool(
+            proxy, tool["name"], tool["description"], tool["inputSchema"], handler
+        )
+    logger.info(
+        "Registered extra tools: %s",
+        ", ".join(t["name"] for t in EXTRA_TOOLS if t["name"] not in discovered_tool_names),
+    )
+
 
 async def _call_downstream(proxy, name: str, arguments: dict) -> str:
     """Call downstream tool and return full text result.
