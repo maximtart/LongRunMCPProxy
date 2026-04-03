@@ -9,6 +9,7 @@ app process via Mach IPC, not through WindowServer.
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -16,7 +17,21 @@ logger = logging.getLogger("longrun-mcp-proxy")
 
 _approver_proc: subprocess.Popen | None = None
 
-_BINARY_PATH = Path(__file__).parent.parent.parent.parent / "dist" / "xcode-auto-approve"
+# Search order: explicit path > PATH > relative to package source
+_BINARY_NAME = "xcode-auto-approve"
+_BINARY_PATH_DEV = Path(__file__).parent.parent.parent.parent / "dist" / _BINARY_NAME
+
+
+def _find_binary() -> Path | None:
+    """Find the xcode-auto-approve binary."""
+    # 1. Relative to source (dev mode / editable install)
+    if _BINARY_PATH_DEV.exists():
+        return _BINARY_PATH_DEV
+    # 2. On PATH (installed globally or via build.sh)
+    found = shutil.which(_BINARY_NAME)
+    if found:
+        return Path(found)
+    return None
 
 
 def start_auto_approver(
@@ -25,18 +40,23 @@ def start_auto_approver(
 ) -> subprocess.Popen | None:
     """Start the auto-approver for Xcode MCP dialogs.
 
-    Requires: compiled Swift binary at dist/xcode-auto-approve.
+    Searches for xcode-auto-approve binary in:
+    1. Explicit binary_path argument
+    2. dist/xcode-auto-approve (relative to package source)
+    3. PATH
+
     Build with: tools/xcode-auto-approve/build.sh
     Requires: macOS with Accessibility access for the calling process.
     """
     global _approver_proc
-    binary = binary_path or _BINARY_PATH
+    binary = binary_path or _find_binary()
 
-    if not binary.exists():
+    if not binary:
         logger.error(
-            "Auto-approver binary not found at %s. "
-            "Run tools/xcode-auto-approve/build.sh to compile.",
-            binary,
+            "Auto-approver binary '%s' not found. "
+            "Run tools/xcode-auto-approve/build.sh to compile, "
+            "or place the binary on PATH.",
+            _BINARY_NAME,
         )
         return None
 
