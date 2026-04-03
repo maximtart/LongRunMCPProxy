@@ -1,4 +1,10 @@
-"""Auto-approve Xcode MCP agent permission dialogs via AppleScript."""
+"""Auto-approve Xcode MCP agent permission dialogs.
+
+Uses a compiled Swift binary (xcode-auto-approve) that polls Xcode via
+AXUIElement API to find and click the "Allow" button on MCP connection
+dialogs.  Works cross-Space because AXUIElement talks directly to the
+app process via Mach IPC, not through WindowServer.
+"""
 
 from __future__ import annotations
 
@@ -10,25 +16,35 @@ logger = logging.getLogger("longrun-mcp-proxy")
 
 _approver_proc: subprocess.Popen | None = None
 
-# AppleScript is bundled with the package
-_SCRIPT_PATH = Path(__file__).parent.parent.parent.parent / "deploy" / "auto_approve_xcode_mcp.applescript"
+_BINARY_PATH = Path(__file__).parent.parent.parent.parent / "dist" / "xcode-auto-approve"
 
 
-def start_auto_approver(script_path: Path | None = None) -> subprocess.Popen | None:
-    """Start the AppleScript auto-approver for Xcode MCP dialogs.
+def start_auto_approver(
+    agent_name: str = "longrun-mcp-proxy",
+    binary_path: Path | None = None,
+) -> subprocess.Popen | None:
+    """Start the auto-approver for Xcode MCP dialogs.
 
+    Requires: compiled Swift binary at dist/xcode-auto-approve.
+    Build with: tools/xcode-auto-approve/build.sh
     Requires: macOS with Accessibility access for the calling process.
     """
     global _approver_proc
-    script = script_path or _SCRIPT_PATH
-    if not script.exists():
-        logger.warning("Auto-approver script not found: %s", script)
+    binary = binary_path or _BINARY_PATH
+
+    if not binary.exists():
+        logger.error(
+            "Auto-approver binary not found at %s. "
+            "Run tools/xcode-auto-approve/build.sh to compile.",
+            binary,
+        )
         return None
+
     try:
         proc = subprocess.Popen(
-            ["osascript", str(script)],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            [str(binary), "--agent-name", agent_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
         _approver_proc = proc
         logger.info("Auto-approver started (PID %d)", proc.pid)

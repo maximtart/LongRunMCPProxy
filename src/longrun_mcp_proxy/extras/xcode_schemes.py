@@ -25,8 +25,13 @@ SCHEME_TOOL_NAMES = {"get_schemes", "set_active_scheme", "get_run_destinations",
 # Xcode runs as a single process — multiple open projects are separate
 # workspaceDocuments within that process.  We match by exact path or by
 # containment (workspace path contains the project dir or vice-versa).
-# No fuzzy/basename fallback to avoid matching the wrong workspace when
-# multiple projects with similar names are open.
+#
+# Worktree fallback: when the same workspace is open from both the main repo
+# and a git worktree, Xcode Scripting Bridge returns the same path for both
+# documents (last-opened wins).  The path-based lookup then fails for the
+# other copy.  Fallback to matching by workspace *name* (basename) so scheme
+# and destination operations still succeed — setting either document affects
+# both, so picking the first name-match is safe.
 _JXA_FIND_WORKSPACE = """
 (function(targetPath) {
     const xcode = Application("Xcode");
@@ -36,6 +41,13 @@ _JXA_FIND_WORKSPACE = """
     for (const doc of docs) {
         const p = doc.path().replace(/\\/+$/, "");
         if (p === target || p.startsWith(target + "/") || target.startsWith(p + "/")) {
+            return doc;
+        }
+    }
+    // Worktree fallback: match by workspace name (basename)
+    const targetName = target.split("/").pop();
+    for (const doc of docs) {
+        if (doc.name() === targetName) {
             return doc;
         }
     }
