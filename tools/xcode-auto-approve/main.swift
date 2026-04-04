@@ -251,7 +251,9 @@ func main() {
     let serverPIDs = serverProcessIDCandidates()
     log("INFO", "Server PID candidates: \(serverPIDs.sorted())")
 
-    while true {
+    // Use Timer + RunLoop instead of usleep — NSWorkspace notifications
+    // require an active RunLoop to update runningApplications.
+    Timer.scheduledTimer(withTimeInterval: Double(config.pollIntervalMs) / 1000.0, repeats: true) { _ in
         let xcodePIDs = runningXcodeProcessIDs()
 
         for pid in xcodePIDs {
@@ -269,7 +271,6 @@ func main() {
                     agentName: config.agentName,
                     serverPIDs: serverPIDs
                 ) {
-                    // Don't double-click same dialog
                     if clickedFingerprints.contains(match.fingerprint) {
                         continue
                     }
@@ -284,11 +285,10 @@ func main() {
                 }
             }
         }
-
-        // Clean fingerprints for dead dialogs (every 100 cycles)
-        // Not critical — fingerprints are small strings
-        usleep(config.pollIntervalMs * 1000)
     }
+
+    // Run the main RunLoop — required for Timer and NSWorkspace updates
+    RunLoop.main.run()
 }
 
 main()
