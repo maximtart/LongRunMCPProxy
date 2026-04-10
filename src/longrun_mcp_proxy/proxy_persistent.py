@@ -224,11 +224,18 @@ def build_persistent_proxy(
         if job.result:
             result_text = filter_large_output(_extract_result_text(job.result))
         elapsed = round(time.time() - job.created_at, 1) if job.completed_at else None
+        # Unwrap JSON strings to avoid double-encoding
+        result_value = result_text
+        if isinstance(result_text, str):
+            try:
+                result_value = json.loads(result_text)
+            except (json.JSONDecodeError, ValueError):
+                pass
         return json.dumps({
             "status": "completed",
             "tool": job.tool_name,
             "elapsed_sec": elapsed,
-            "result": result_text,
+            "result": result_value,
         })
 
     @proxy.tool(name="cancel_job")

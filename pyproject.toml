@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "longrun-mcp-proxy"
-version = "1.6.1"
+version = "1.6.2"
 description = "MCP proxy with async wrapper for long-running tools and persistent SSE mode"
 requires-python = ">=3.11"
 dependencies = [

@@ -324,11 +324,18 @@ def _register_job_tools(proxy, store: JobStore) -> None:
         if hasattr(job, "result_text") and job.result_text:
             result_text = filter_large_output(job.result_text)
         elapsed = round(time.time() - job.created_at, 1) if job.completed_at else None
+        # Unwrap JSON strings to avoid double-encoding
+        result_value = result_text
+        if isinstance(result_text, str):
+            try:
+                result_value = json.loads(result_text)
+            except (json.JSONDecodeError, ValueError):
+                pass
         return json.dumps({
             "status": "completed",
             "tool": job.tool_name,
             "elapsed_sec": elapsed,
-            "result": result_text,
+            "result": result_value,
         })
 
     @proxy.tool(name="cancel_job")
