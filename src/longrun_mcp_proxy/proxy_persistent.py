@@ -29,6 +29,7 @@ from mcp import types as mcp_types
 
 from longrun_mcp_proxy.job_store import JobStore
 from longrun_mcp_proxy.output_filter import filter_large_output
+from longrun_mcp_proxy.result_classifier import classify_result
 
 logger = logging.getLogger("longrun-mcp-proxy")
 
@@ -232,6 +233,19 @@ def build_persistent_proxy(
                 result_value = json.loads(result_text)
             except (json.JSONDecodeError, ValueError):
                 pass
+        if job.status == "compilation_issues":
+            return json.dumps({
+                "status": "compilation_issues",
+                "tool": job.tool_name,
+                "elapsed_sec": elapsed,
+                "error": job.error or "Testing cancelled because the build failed.",
+                "hint": (
+                    "Tests did NOT run — the target failed to compile. "
+                    "Fix the build first (e.g. BuildProject or XcodeListNavigatorIssues) "
+                    "before trusting any test counts in result."
+                ),
+                "result": result_value,
+            })
         return json.dumps({
             "status": "completed",
             "tool": job.tool_name,
@@ -292,7 +306,11 @@ def _register_async_tool(proxy, downstream, store, name, description, input_sche
                         await asyncio.sleep(retry_delay)
                         result = await downstream.call_tool(name, kwargs)
                 job.result = result
-                job.status = "completed"
+                result_text = _extract_result_text(result)
+                status, error_msg = classify_result(result_text)
+                job.status = status
+                if error_msg:
+                    job.error = error_msg
             except Exception as exc:
                 job.error = str(exc)
                 job.status = "failed"
