@@ -43,6 +43,29 @@ class TestClassifyResult:
         assert status == "failed"
         assert err == "Tests are already running."
 
+    def test_incomplete_result_bundle_is_transient_error(self):
+        payload = json.dumps(
+            {
+                "type": "error",
+                "data": (
+                    "The result bundle could not be opened as it is "
+                    "incomplete. Xcode might have failed to finish writing "
+                    "the result bundle."
+                ),
+            }
+        )
+        status, err = classify_result(payload)
+        assert status == "transient_error"
+        assert "result bundle" in err
+
+    def test_incomplete_multipart_message_variant_is_transient_error(self):
+        # The XCResultKit-level enum case surfaces with this phrasing
+        payload = json.dumps(
+            {"type": "error", "data": "Incomplete multipart message."}
+        )
+        status, err = classify_result(payload)
+        assert status == "transient_error"
+
     def test_error_type_without_data_still_fails(self):
         payload = json.dumps({"type": "error"})
         status, err = classify_result(payload)
@@ -130,3 +153,26 @@ class TestCheckJobSurfacesCompilationIssues:
         # The stale structured result is still included for transparency,
         # so the agent can see what mcpbridge tried to claim.
         assert parsed["result"]["counts"]["passed"] == 1
+
+    @pytest.mark.asyncio
+    async def test_check_job_returns_transient_error_shape(self):
+        from longrun_mcp_proxy.proxy_stdio import build_proxy
+
+        proxy = build_proxy(["echo", "dummy"], {"RunAllTests"})
+        store = proxy._store
+
+        job = store.create("RunAllTests")
+        job.status = "transient_error"
+        job.error = (
+            "The result bundle could not be opened as it is incomplete."
+        )
+        job.completed_at = 0.0
+
+        check_fn = (await proxy.get_tool("check_job")).fn
+        parsed = json.loads(check_fn(job_id=job.id))
+
+        assert parsed["status"] == "transient_error"
+        assert parsed["tool"] == "RunAllTests"
+        assert "result bundle" in parsed["error"]
+        assert "retry" in parsed["hint"].lower()
+        assert "likely succeeded" in parsed["hint"]

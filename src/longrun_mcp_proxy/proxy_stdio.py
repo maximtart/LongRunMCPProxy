@@ -353,6 +353,19 @@ def _register_job_tools(proxy, store: JobStore) -> None:
                 ),
                 "result": result_value,
             })
+        if job.status == "transient_error":
+            return json.dumps({
+                "status": "transient_error",
+                "tool": job.tool_name,
+                "elapsed_sec": elapsed,
+                "error": job.error or "Transient downstream error.",
+                "hint": (
+                    "Race while reading the xcresult bundle — the action likely "
+                    "succeeded but the result bundle wasn't fully written when "
+                    "Xcode read it. Wait ~3-5 seconds and retry the same tool. "
+                    "Do NOT assume the action failed."
+                ),
+            })
         return json.dumps({
             "status": "completed",
             "tool": job.tool_name,

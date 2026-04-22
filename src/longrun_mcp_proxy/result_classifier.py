@@ -16,6 +16,14 @@ from __future__ import annotations
 import json
 
 BUILD_FAILED_MARKER = "Testing cancelled because the build failed"
+# XCResultKit raises `.incompleteMultipartMessage` when the proxy/native MCP
+# reads the .xcresult bundle while xcodebuild is still flushing it. The
+# surfaced wrapper message is stable across recent Xcodes.
+INCOMPLETE_BUNDLE_MARKERS = (
+    "result bundle could not be opened",
+    "failed to finish writing the result bundle",
+    "Incomplete multipart message",
+)
 _LOG_READ_LIMIT = 16_384
 
 
@@ -26,6 +34,9 @@ def classify_result(result_text: str) -> tuple[str, str | None]:
     - ``("failed", <msg>)``: downstream wrapped an internal error payload
     - ``("compilation_issues", <msg>)``: tests didn't actually run because
       the build failed upstream; structured test counts are stale
+    - ``("transient_error", <msg>)``: downstream hit a race/flake (e.g.
+      xcresult bundle read mid-flush); the original action likely
+      succeeded but the proxy can't read the result — agent should retry
     """
     if not isinstance(result_text, str) or not result_text:
         return "completed", None
@@ -38,7 +49,10 @@ def classify_result(result_text: str) -> tuple[str, str | None]:
         return "completed", None
 
     if parsed.get("type") == "error":
-        return "failed", str(parsed.get("data", "Unknown error"))
+        data = str(parsed.get("data", "Unknown error"))
+        if _is_incomplete_bundle_error(data):
+            return "transient_error", data
+        return "failed", data
 
     log_path = parsed.get("fullConsoleLogsPath")
     if isinstance(log_path, str) and log_path:
@@ -51,6 +65,12 @@ def classify_result(result_text: str) -> tuple[str, str | None]:
             return "compilation_issues", _extract_build_error(content)
 
     return "completed", None
+
+
+def _is_incomplete_bundle_error(data: str) -> bool:
+    """True if the downstream error looks like an xcresult read race."""
+    lowered = data.lower()
+    return any(marker.lower() in lowered for marker in INCOMPLETE_BUNDLE_MARKERS)
 
 
 def _extract_build_error(console_log: str) -> str:
