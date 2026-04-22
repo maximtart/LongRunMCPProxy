@@ -23,6 +23,7 @@ import typing
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import StdioTransport
+from fastmcp.tools.tool import Tool
 from mcp import types as mcp_types
 from mcp.types import TextContent
 
@@ -298,7 +299,11 @@ def _register_dynamic_tool(proxy, name, description, input_schema, handler):
     func = local_ns[name]
     func.__doc__ = description
 
-    proxy.tool(name=name)(func)
+    tool_obj = Tool.from_function(func, name=name, description=description)
+    # Preserve the raw downstream inputSchema (nested item/property types
+    # that FastMCP's signature inference would flatten to `list` / `dict`).
+    tool_obj.parameters = input_schema
+    proxy.add_tool(tool_obj)
 
 
 def _register_job_tools(proxy, store: JobStore) -> None:
