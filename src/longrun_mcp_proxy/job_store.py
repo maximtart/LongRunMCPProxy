@@ -14,8 +14,9 @@ JOB_TTL_SEC = 600  # clean up completed jobs after 10 min
 class Job:
     id: str
     tool_name: str
-    status: str = "running"  # running | completed | failed
-    result: object | None = None
+    status: str = "running"  # running | completed | failed | compilation_issues | transient_error
+    result: object | None = None          # raw downstream CallToolResult (persistent proxy)
+    result_text: str | None = None        # serialised result text (stdio proxy or recovery)
     error: str | None = None
     created_at: float = field(default_factory=time.time)
     completed_at: float | None = None

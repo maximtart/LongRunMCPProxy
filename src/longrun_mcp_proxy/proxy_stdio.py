@@ -230,6 +230,21 @@ def _register_async_tool(proxy, store, name, description, input_schema):
                     result_text = await _call_downstream(proxy, name, kwargs)
                 job.result_text = result_text
                 status, error_msg = classify_result(result_text)
+                if status == "transient_error":
+                    from longrun_mcp_proxy.xcresult_recovery import recover_from_xcresult
+                    logger.info(
+                        "Transient xcresult error for %s — reading bundle directly", name
+                    )
+                    ok, recovered = await recover_from_xcresult()
+                    if ok:
+                        job.result_text = json.dumps(recovered)
+                        status, error_msg = "completed", None
+                    else:
+                        status = "failed"
+                        error_msg = (
+                            f"xcresult bundle unreadable after wait: {recovered}. "
+                            f"Re-run {name} manually."
+                        )
                 job.status = status
                 if error_msg:
                     job.error = error_msg

@@ -223,7 +223,9 @@ def build_persistent_proxy(
             error = filter_large_output(job.error) if job.error else "unknown error"
             return json.dumps({"status": "failed", "error": error})
         result_text = None
-        if job.result:
+        if job.result_text:
+            result_text = filter_large_output(job.result_text)
+        elif job.result:
             result_text = filter_large_output(_extract_result_text(job.result))
         elapsed = round(time.time() - job.created_at, 1) if job.completed_at else None
         # Unwrap JSON strings to avoid double-encoding
@@ -321,6 +323,21 @@ def _register_async_tool(proxy, downstream, store, name, description, input_sche
                 job.result = result
                 result_text = _extract_result_text(result)
                 status, error_msg = classify_result(result_text)
+                if status == "transient_error":
+                    from longrun_mcp_proxy.xcresult_recovery import recover_from_xcresult
+                    logger.info(
+                        "Transient xcresult error for %s — reading bundle directly", name
+                    )
+                    ok, recovered = await recover_from_xcresult()
+                    if ok:
+                        job.result_text = json.dumps(recovered)
+                        status, error_msg = "completed", None
+                    else:
+                        status = "failed"
+                        error_msg = (
+                            f"xcresult bundle unreadable after wait: {recovered}. "
+                            f"Re-run {name} manually."
+                        )
                 job.status = status
                 if error_msg:
                     job.error = error_msg
