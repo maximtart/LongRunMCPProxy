@@ -81,16 +81,22 @@ def build_proxy(
     return proxy
 
 
-async def connect_and_register(proxy) -> None:
-    """Connect to downstream MCP server and register all tools."""
+def _new_client(proxy) -> Client:
+    """Build a downstream client for this proxy's command."""
     transport = StdioTransport(
         command=proxy._downstream_cmd[0],
         args=proxy._downstream_cmd[1:],
         env=proxy._downstream_env,
     )
-    proxy._downstream_client = Client(
+    return Client(
         transport, client_info=client_info(getattr(proxy, "_client_name", None))
     )
+
+
+async def connect_and_register(proxy) -> None:
+    """Connect to downstream MCP server and register all tools."""
+    proxy._downstream_client = _new_client(proxy)
+    proxy._reconnect_lock = asyncio.Lock()
     await proxy._downstream_client.__aenter__()
     tools = await proxy._downstream_client.list_tools()
 
@@ -171,17 +177,45 @@ def _register_extras(proxy, discovered_tool_names: set[str]) -> None:
     )
 
 
-async def _call_downstream(proxy, name: str, arguments: dict) -> str:
-    """Call downstream tool and return full text result.
+def describe_error(exc: BaseException) -> str:
+    """Never return an empty error string.
 
-    Uses send_request() directly to bypass both FastMCP's ToolError truncation
-    AND MCP SDK's client-side outputSchema validation. The proxy is a transport
-    layer — downstream servers (e.g. Xcode MCP) may return structuredContent
-    that violates their own outputSchema (missing required fields like 'line').
-    Blocking that here would lose valid build results.
+    Transport failures often carry no message at all (anyio's
+    ClosedResourceError is the common one), which surfaced to agents as
+    `{"error": ""}` — indistinguishable from a tool that legitimately returned
+    nothing.
     """
+    return str(exc).strip() or type(exc).__name__
+
+
+async def _reconnect_downstream(proxy) -> None:
+    """Restart the downstream process after it died.
+
+    The downstream is not ours to keep alive: `xcrun mcp-server deny` (and any
+    Xcode restart that stops the MCP service) takes `mcpbridge` down with it.
+    Without this the proxy stays up forever, answering every call with a
+    transport error.
+    """
+    lock = getattr(proxy, "_reconnect_lock", None)
+    if lock is None:
+        lock = proxy._reconnect_lock = asyncio.Lock()
+
+    async with lock:
+        old = proxy._downstream_client
+        try:
+            await old.__aexit__(None, None, None)
+        except Exception:
+            pass
+
+        proxy._downstream_client = _new_client(proxy)
+        await proxy._downstream_client.__aenter__()
+        tools = await proxy._downstream_client.list_tools()
+        logger.info("Reconnected to downstream (%d tools)", len(tools))
+
+
+async def _send_downstream(proxy, name: str, arguments: dict):
     session = proxy._downstream_client.session
-    raw = await session.send_request(
+    return await session.send_request(
         mcp_types.ClientRequest(
             mcp_types.CallToolRequest(
                 params=mcp_types.CallToolRequestParams(
@@ -191,6 +225,29 @@ async def _call_downstream(proxy, name: str, arguments: dict) -> str:
         ),
         mcp_types.CallToolResult,
     )
+
+
+async def _call_downstream(proxy, name: str, arguments: dict) -> str:
+    """Call downstream tool and return full text result.
+
+    Uses send_request() directly to bypass both FastMCP's ToolError truncation
+    AND MCP SDK's client-side outputSchema validation. The proxy is a transport
+    layer — downstream servers (e.g. Xcode MCP) may return structuredContent
+    that violates their own outputSchema (missing required fields like 'line').
+    Blocking that here would lose valid build results.
+
+    Retries once through a fresh downstream when the transport is gone.
+    """
+    try:
+        raw = await _send_downstream(proxy, name, arguments)
+    except Exception as exc:
+        logger.warning(
+            "Downstream call %s failed (%s) — reconnecting",
+            name,
+            describe_error(exc),
+        )
+        await _reconnect_downstream(proxy)
+        raw = await _send_downstream(proxy, name, arguments)
 
     texts = []
     for c in (raw.content or []):
@@ -213,7 +270,7 @@ def _register_passthrough_tool(proxy, name, description, input_schema):
                 result = dedup_build_log(result)
             return result
         except Exception as e:
-            return json.dumps({"error": str(e)})
+            return json.dumps({"error": describe_error(e)})
 
     _register_dynamic_tool(proxy, name, description, input_schema, _handler)
 
@@ -256,7 +313,7 @@ def _register_async_tool(proxy, store, name, description, input_schema):
                 if error_msg:
                     job.error = error_msg
             except Exception as exc:
-                job.error = str(exc)
+                job.error = describe_error(exc)
                 job.status = "failed"
             job.completed_at = time.time()
 

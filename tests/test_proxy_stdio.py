@@ -5,9 +5,18 @@ from __future__ import annotations
 import json
 
 import pytest
+from mcp.types import TextContent
+
+from anyio import ClosedResourceError
 
 from longrun_mcp_proxy.job_store import JobStore
-from longrun_mcp_proxy.proxy_stdio import _register_dynamic_tool, build_proxy
+from longrun_mcp_proxy import proxy_stdio
+from longrun_mcp_proxy.proxy_stdio import (
+    _call_downstream,
+    _register_dynamic_tool,
+    build_proxy,
+    describe_error,
+)
 
 
 class TestProxyTools:
@@ -39,6 +48,60 @@ class TestProxyTools:
         result = json.loads(cancel_fn(job_id=job.id))
         assert result["status"] == "cancelled"
         assert job.status == "failed"
+
+
+class TestDownstreamRecovery:
+    """A dead downstream must be restarted, not reported as an empty error.
+
+    `xcrun mcp-server deny` stops the Xcode MCP service and takes `mcpbridge`
+    with it. The proxy survives, so every later call used to fail with
+    `{"error": ""}` — no reconnect, no diagnosable message.
+    """
+
+    def test_describe_error_never_empty(self):
+        assert describe_error(ClosedResourceError()) == "ClosedResourceError"
+        assert describe_error(RuntimeError("boom")) == "boom"
+
+    @pytest.mark.asyncio
+    async def test_reconnects_once_then_retries(self, monkeypatch):
+        proxy = build_proxy(["echo", "dummy"], set())
+        calls = {"send": 0, "reconnect": 0}
+
+        async def fake_send(_proxy, name, arguments):
+            calls["send"] += 1
+            if calls["send"] == 1:
+                raise ClosedResourceError()
+
+            class _Result:
+                isError = False
+                content = [TextContent(type="text", text="recovered")]
+
+            return _Result()
+
+        async def fake_reconnect(_proxy):
+            calls["reconnect"] += 1
+
+        monkeypatch.setattr(proxy_stdio, "_send_downstream", fake_send)
+        monkeypatch.setattr(proxy_stdio, "_reconnect_downstream", fake_reconnect)
+
+        assert await _call_downstream(proxy, "BuildProject", {}) == "recovered"
+        assert calls == {"send": 2, "reconnect": 1}
+
+    @pytest.mark.asyncio
+    async def test_second_failure_propagates(self, monkeypatch):
+        proxy = build_proxy(["echo", "dummy"], set())
+
+        async def always_dead(_proxy, name, arguments):
+            raise ClosedResourceError()
+
+        async def fake_reconnect(_proxy):
+            return None
+
+        monkeypatch.setattr(proxy_stdio, "_send_downstream", always_dead)
+        monkeypatch.setattr(proxy_stdio, "_reconnect_downstream", fake_reconnect)
+
+        with pytest.raises(ClosedResourceError):
+            await _call_downstream(proxy, "BuildProject", {})
 
 
 class TestInputSchemaPreservation:
