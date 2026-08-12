@@ -182,6 +182,53 @@ so with `--client-name`, or globally with `$LONGRUN_CLIENT_NAME`:
 longrun-mcp-proxy stdio --client-name "Claude Code — bnine.ios" -- xcrun mcpbridge
 ```
 
+## Signed binary for Xcode 27 (v1.9.0+)
+
+Xcode 27's headless MCP server (`xcrun mcp-server`) grants durable trust only to
+**signed** agents, and it treats the parent process of `mcpbridge` as the agent.
+Run as a Python script, that parent is the shared `uv` interpreter — so the
+permission record reads `signingIdentifier=python3` and covers every tool using
+that interpreter. Unsigned interpreters are worse: they are pinned by file hash
+and capped at 24 hours (`unsigned agents may only be approved with
+--for-24-hours, not --always`).
+
+Freezing the proxy into its own signed Mach-O narrows the grant to this proxy:
+
+```bash
+uv pip install --python .venv/bin/python pyinstaller typer
+./tools/build-signed-binary.sh          # override cert with $SIGN_IDENTITY
+cp dist/longrun-mcp-proxy ~/.local/bin/longrun-mcp-proxy-signed
+```
+
+Point the MCP client at that path. Keeping it out of the tracked config:
+
+```jsonc
+// .mcp.json — portable, falls back to the PATH install
+"command": "${LONGRUN_MCP:-longrun-mcp-proxy}"
+```
+
+```jsonc
+// ~/.claude/settings.json — machine-specific
+"env": { "LONGRUN_MCP": "/Users/you/.local/bin/longrun-mcp-proxy-signed" }
+```
+
+### Re-sign on every update
+
+**`uv tool install` does not touch the frozen binary.** Updating the proxy means
+rebuilding and re-signing it, otherwise the MCP client keeps running the old
+frozen copy:
+
+```bash
+git pull && ./tools/build-signed-binary.sh
+cp dist/longrun-mcp-proxy ~/.local/bin/longrun-mcp-proxy-signed
+```
+
+The build script always signs, so a rebuilt binary stays trusted: Xcode matches
+its record on `signingIdentifier` + `teamIdentifier` and stores no hash — a new
+build with the same identity needs no new approval. Skipping the signing step
+(or building without `-i longrun-mcp-proxy`) drops back to an ad-hoc signature
+and the 24-hour prompt returns.
+
 ## Requirements
 
 - Python >= 3.11
