@@ -21,6 +21,8 @@ import asyncio
 import logging
 import sys
 
+from longrun_mcp_proxy.client_identity import DEFAULT_CLIENT_NAME
+
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -42,6 +44,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--async-tools",
         default="",
         help="Comma-separated tool names to wrap in async start/poll pattern",
+    )
+    stdio_p.add_argument(
+        "--client-name",
+        default=None,
+        help=(
+            "Name reported to downstream as clientInfo.name (Xcode shows it in "
+            "Agent Activity). Defaults to $LONGRUN_CLIENT_NAME or "
+            f"'{DEFAULT_CLIENT_NAME}'"
+        ),
     )
     stdio_p.add_argument(
         "command", nargs=argparse.REMAINDER, help="Downstream MCP server command"
@@ -79,6 +90,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Start AppleScript auto-approver for Xcode MCP dialogs",
     )
     pers_p.add_argument(
+        "--client-name",
+        default=None,
+        help=(
+            "Name reported to downstream as clientInfo.name (Xcode shows it in "
+            "Agent Activity). Defaults to $LONGRUN_CLIENT_NAME or "
+            f"'{DEFAULT_CLIENT_NAME}'"
+        ),
+    )
+    pers_p.add_argument(
         "command", nargs=argparse.REMAINDER, help="Downstream MCP server command"
     )
 
@@ -100,7 +120,7 @@ def _run_stdio(args: argparse.Namespace) -> None:
 
     async_tools = {t.strip() for t in args.async_tools.split(",") if t.strip()}
 
-    proxy = build_proxy(args.command, async_tools)
+    proxy = build_proxy(args.command, async_tools, client_name=args.client_name)
 
     async def _main():
         await connect_and_register(proxy)
@@ -136,6 +156,7 @@ def _run_persistent(args: argparse.Namespace) -> None:
             port=args.port,
             host=args.host,
             name=args.name,
+            client_name=args.client_name,
         )
         try:
             await task

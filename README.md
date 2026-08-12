@@ -159,12 +159,26 @@ longrun-mcp-proxy persistent --auto-approve --port 8421 -- xcrun mcpbridge
 | Flag | Mode | Description |
 |------|------|-------------|
 | `--async-tools TOOLS` | both | Comma-separated tool names to wrap (overrides auto-detect) |
+| `--client-name NAME` | both | Name reported downstream as `clientInfo.name` (also `$LONGRUN_CLIENT_NAME`) |
 | `-v, --verbose` | both | Enable debug logging |
 | `--port PORT` | persistent | SSE server port (default: 8421) |
 | `--host HOST` | persistent | SSE server host (default: 127.0.0.1) |
 | `--name NAME` | persistent | Proxy server name |
 | `--xcode-defaults` | persistent | Set Xcode permission defaults |
 | `--auto-approve` | persistent | Auto-approve Xcode dialogs |
+
+## Client identity (v1.8.0+)
+
+Downstream servers display the `clientInfo.name` from the MCP handshake — Xcode 27
+lists it in its Agent Activity panel. The MCP SDK default is `mcp`, so proxied
+agents used to show up as a bare "mcp" row.
+
+The proxy now sends `Claude Code (longrun-mcp-proxy)` by default. Override per
+invocation with `--client-name`, or globally with `$LONGRUN_CLIENT_NAME`:
+
+```bash
+longrun-mcp-proxy stdio --client-name "Claude Code — bnine.ios" -- xcrun mcpbridge
+```
 
 ## Requirements
 

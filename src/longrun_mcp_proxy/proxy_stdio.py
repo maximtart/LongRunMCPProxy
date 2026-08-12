@@ -27,6 +27,7 @@ from fastmcp.tools.tool import Tool
 from mcp import types as mcp_types
 from mcp.types import TextContent
 
+from longrun_mcp_proxy.client_identity import client_info
 from longrun_mcp_proxy.job_store import JobStore
 from longrun_mcp_proxy.output_filter import filter_large_output
 from longrun_mcp_proxy.result_classifier import classify_result
@@ -49,6 +50,7 @@ def build_proxy(
     downstream_cmd: list[str],
     async_tools: set[str],
     env: dict[str, str] | None = None,
+    client_name: str | None = None,
 ):
     """Build a FastMCP proxy stub (sync, no downstream connection).
 
@@ -61,6 +63,8 @@ def build_proxy(
         async_tools: Tool names to wrap in async start/poll pattern.
         env: Environment variables for downstream process.
              Defaults to current process environment.
+        client_name: Name reported to downstream as clientInfo.name.
+             Defaults to $LONGRUN_CLIENT_NAME or DEFAULT_CLIENT_NAME.
     """
     proxy = FastMCP("longrun-mcp-proxy")
     store = JobStore()
@@ -70,6 +74,7 @@ def build_proxy(
     proxy._downstream_client: Client | None = None
     proxy._async_tools = async_tools
     proxy._store = store
+    proxy._client_name = client_name
 
     _register_job_tools(proxy, store)
 
@@ -83,7 +88,9 @@ async def connect_and_register(proxy) -> None:
         args=proxy._downstream_cmd[1:],
         env=proxy._downstream_env,
     )
-    proxy._downstream_client = Client(transport)
+    proxy._downstream_client = Client(
+        transport, client_info=client_info(getattr(proxy, "_client_name", None))
+    )
     await proxy._downstream_client.__aenter__()
     tools = await proxy._downstream_client.list_tools()
 

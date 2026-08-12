@@ -27,6 +27,7 @@ from fastmcp.client.transports import StdioTransport
 from fastmcp.tools.tool import Tool
 from mcp import types as mcp_types
 
+from longrun_mcp_proxy.client_identity import client_info
 from longrun_mcp_proxy.job_store import JobStore
 from longrun_mcp_proxy.output_filter import filter_large_output
 from longrun_mcp_proxy.result_classifier import classify_result
@@ -45,9 +46,15 @@ class PersistentDownstream:
     Reconnects automatically if the downstream dies.
     """
 
-    def __init__(self, command: list[str], env: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        command: list[str],
+        env: dict[str, str] | None = None,
+        client_name: str | None = None,
+    ) -> None:
         self._command = command
         self._env = env or dict(os.environ)
+        self._client_name = client_name
         self._client: Client | None = None
         self._lock = asyncio.Lock()
         self._tools: list = []
@@ -121,7 +128,7 @@ class PersistentDownstream:
             args=self._command[1:],
             env=self._env,
         )
-        return Client(transport)
+        return Client(transport, client_info=client_info(self._client_name))
 
     async def _close_client(self) -> None:
         if self._client:
@@ -430,6 +437,7 @@ async def start_persistent_proxy(
     host: str = "127.0.0.1",
     env: dict[str, str] | None = None,
     name: str = "longrun-mcp-proxy",
+    client_name: str | None = None,
 ) -> asyncio.Task:
     """Start persistent MCP proxy as an SSE server.
 
@@ -437,7 +445,7 @@ async def start_persistent_proxy(
     """
     global _server_task, _downstream
 
-    _downstream = PersistentDownstream(command, env=env)
+    _downstream = PersistentDownstream(command, env=env, client_name=client_name)
     tools = await _downstream.connect()
 
     proxy = build_persistent_proxy(_downstream, tools, async_tools, name=name)
