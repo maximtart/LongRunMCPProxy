@@ -13,7 +13,7 @@ from importlib import metadata
 
 from mcp import types as mcp_types
 
-DEFAULT_CLIENT_NAME = "Claude Code (longrun-mcp-proxy)"
+DEFAULT_CLIENT_NAME = "longrun mcp proxy"
 CLIENT_NAME_ENV = "LONGRUN_CLIENT_NAME"
 
 

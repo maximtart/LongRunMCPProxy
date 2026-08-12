@@ -173,8 +173,10 @@ Downstream servers display the `clientInfo.name` from the MCP handshake — Xcod
 lists it in its Agent Activity panel. The MCP SDK default is `mcp`, so proxied
 agents used to show up as a bare "mcp" row.
 
-The proxy now sends `Claude Code (longrun-mcp-proxy)` by default. Override per
-invocation with `--client-name`, or globally with `$LONGRUN_CLIENT_NAME`:
+The proxy identifies itself as `longrun mcp proxy`. It is client-agnostic — the
+same install serves several agents — so the default names the transport, not
+whoever is driving it. Agents that want to be told apart in the panel should say
+so with `--client-name`, or globally with `$LONGRUN_CLIENT_NAME`:
 
 ```bash
 longrun-mcp-proxy stdio --client-name "Claude Code — bnine.ios" -- xcrun mcpbridge
