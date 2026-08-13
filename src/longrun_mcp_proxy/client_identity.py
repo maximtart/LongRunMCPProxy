@@ -25,7 +25,7 @@ from pathlib import Path
 
 from mcp import types as mcp_types
 
-FALLBACK_CLIENT_NAME = "longrun mcp proxy"
+FALLBACK_CLIENT_NAME = "Longrun"
 CLIENT_NAME_ENV = "LONGRUN_CLIENT_NAME"
 CLIENT_NOTE_ENV = "LONGRUN_CLIENT_NOTE"
 
@@ -118,7 +118,7 @@ def resolve_client_name(name: str | None = None) -> str:
 
 def _title(resolved_name: str, note: str | None) -> str:
     """Long form: full project path, pid, and the operator's note if any."""
-    bits = [f"longrun mcp proxy — {resolved_name}", f"pid {os.getpid()}", str(_project_dir())]
+    bits = [f"Longrun — {resolved_name}", f"pid {os.getpid()}", str(_project_dir())]
     note = note or os.environ.get(CLIENT_NOTE_ENV)
     if note:
         bits.append(note.strip())

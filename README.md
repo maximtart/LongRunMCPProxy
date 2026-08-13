@@ -194,7 +194,7 @@ export LONGRUN_CLIENT_NOTE="release build for 4.9.0"
 
 Override the name entirely with `--client-name`, or `$LONGRUN_CLIENT_NAME`.
 Detection never blocks a connection: any failure falls back to
-`longrun mcp proxy`.
+`Longrun`.
 
 ## Signed binary for Xcode 27 (v1.9.0+)
 
