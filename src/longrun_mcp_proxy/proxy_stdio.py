@@ -64,7 +64,7 @@ def build_proxy(
         env: Environment variables for downstream process.
              Defaults to current process environment.
         client_name: Name reported to downstream as clientInfo.name.
-             Defaults to $LONGRUN_CLIENT_NAME or DEFAULT_CLIENT_NAME.
+             Defaults to $LONGRUN_CLIENT_NAME, else auto-detected.
     """
     proxy = FastMCP("longrun-mcp-proxy")
     store = JobStore()

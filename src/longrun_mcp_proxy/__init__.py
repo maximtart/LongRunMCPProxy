@@ -3,7 +3,8 @@
 __version__ = "0.1.0"
 
 from longrun_mcp_proxy.client_identity import (
-    DEFAULT_CLIENT_NAME,
+    FALLBACK_CLIENT_NAME,
+    auto_client_name,
     client_info,
     resolve_client_name,
 )
@@ -17,7 +18,8 @@ from longrun_mcp_proxy.proxy_persistent import (
 )
 
 __all__ = [
-    "DEFAULT_CLIENT_NAME",
+    "FALLBACK_CLIENT_NAME",
+    "auto_client_name",
     "client_info",
     "resolve_client_name",
     "Job",

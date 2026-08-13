@@ -21,7 +21,6 @@ import asyncio
 import logging
 import sys
 
-from longrun_mcp_proxy.client_identity import DEFAULT_CLIENT_NAME
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -49,9 +48,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--client-name",
         default=None,
         help=(
-            "Name reported to downstream as clientInfo.name (Xcode shows it in "
-            "Agent Activity). Defaults to $LONGRUN_CLIENT_NAME or "
-            f"'{DEFAULT_CLIENT_NAME}'"
+            "Name reported to downstream as clientInfo.name (Xcode shows it "
+            "under Connected Agents). Defaults to $LONGRUN_CLIENT_NAME, else "
+            "auto-detected as project@branch \u00b7 host \u00b7 session"
         ),
     )
     stdio_p.add_argument(
@@ -93,9 +92,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--client-name",
         default=None,
         help=(
-            "Name reported to downstream as clientInfo.name (Xcode shows it in "
-            "Agent Activity). Defaults to $LONGRUN_CLIENT_NAME or "
-            f"'{DEFAULT_CLIENT_NAME}'"
+            "Name reported to downstream as clientInfo.name (Xcode shows it "
+            "under Connected Agents). Defaults to $LONGRUN_CLIENT_NAME, else "
+            "auto-detected as project@branch \u00b7 host \u00b7 session"
         ),
     )
     pers_p.add_argument(

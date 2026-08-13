@@ -173,14 +173,28 @@ Downstream servers display the `clientInfo.name` from the MCP handshake — Xcod
 lists it in its Agent Activity panel. The MCP SDK default is `mcp`, so proxied
 agents used to show up as a bare "mcp" row.
 
-The proxy identifies itself as `longrun mcp proxy`. It is client-agnostic — the
-same install serves several agents — so the default names the transport, not
-whoever is driving it. Agents that want to be told apart in the panel should say
-so with `--client-name`, or globally with `$LONGRUN_CLIENT_NAME`:
+Downstream UIs show `clientInfo` — Xcode 27 lists it under Connected Agents.
+Several sessions usually run at once, so the name is derived per process from
+what the launching agent leaves in the environment:
+
+```
+dev1@B9-12361-ios-screen-with… · vscode · 2069486e
+│    │                           │         └─ CLAUDE_CODE_SESSION_ID, first 8
+│    │                           └─ TERM_PROGRAM, else CLAUDE_CODE_ENTRYPOINT
+│    └─ current git branch, trimmed to 24 chars
+└─ CLAUDE_PROJECT_DIR (else cwd)
+```
+
+`clientInfo.title` carries the long form — full project path, pid, and an
+optional operator note explaining *why* this session is connected:
 
 ```bash
-longrun-mcp-proxy stdio --client-name "Claude Code — bnine.ios" -- xcrun mcpbridge
+export LONGRUN_CLIENT_NOTE="release build for 4.9.0"
 ```
+
+Override the name entirely with `--client-name`, or `$LONGRUN_CLIENT_NAME`.
+Detection never blocks a connection: any failure falls back to
+`longrun mcp proxy`.
 
 ## Signed binary for Xcode 27 (v1.9.0+)
 
